@@ -53,16 +53,6 @@ jobs:
             docker-compose.prod.yml \
             "$SERVER_USER@$SERVER_HOST:~/lingua-mentis/docker-compose.yml"
 
-      - name: Inject APP_PASSWORD
-        env:
-          APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
-          SERVER_HOST: ${{ secrets.SERVER_HOST }}
-          SERVER_USER: ${{ secrets.SERVER_USER }}
-        run: |
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
-            "$SERVER_USER@$SERVER_HOST" \
-            "echo 'APP_PASSWORD=${APP_PASSWORD}' > ~/lingua-mentis/.env"
-
       - name: Pull image and deploy
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

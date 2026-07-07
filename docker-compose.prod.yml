@@ -4,7 +4,6 @@ services:
     restart: unless-stopped
     environment:
       - PYTHONUNBUFFERED=1
-      - APP_PASSWORD=${APP_PASSWORD}
     volumes:
       - ./data:/app/data
       - ./models:/app/models
