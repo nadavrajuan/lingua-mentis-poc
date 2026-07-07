@@ -7,7 +7,6 @@ on:
 
 env:
   IMAGE: ghcr.io/nadavrajuan/lingua-mentis-poc
-  DEPLOY_DIR: $HOME/lingua-mentis
 
 jobs:
   build-and-deploy:
@@ -42,49 +41,19 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
 
-      - name: Deploy to server
+      - name: Setup dirs and copy compose file
         env:
-          APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
           SERVER_USER: ${{ secrets.SERVER_USER }}
         run: |
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
-            "$SERVER_USER@$SERVER_HOST" bash -s << 'ENDSSH'
-          set -e
-          mkdir -p ~/lingua-mentis/data/mnist ~/lingua-mentis/models
-          cd ~/lingua-mentis
+            "$SERVER_USER@$SERVER_HOST" \
+            'mkdir -p ~/lingua-mentis/data/mnist ~/lingua-mentis/models'
+          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+            docker-compose.prod.yml \
+            "$SERVER_USER@$SERVER_HOST:~/lingua-mentis/docker-compose.yml"
 
-          cat > docker-compose.yml << 'COMPOSE'
-          services:
-            lingua-mentis:
-              image: ghcr.io/nadavrajuan/lingua-mentis-poc:latest
-              restart: unless-stopped
-              environment:
-                - PYTHONUNBUFFERED=1
-                - APP_PASSWORD=${APP_PASSWORD}
-              volumes:
-                - ./data:/app/data
-                - ./models:/app/models
-              networks:
-                - traefik-public
-              labels:
-                - "traefik.enable=true"
-                - "traefik.http.routers.lingua-mentis.rule=Host(`lingua-mentis.rajuan.app`)"
-                - "traefik.http.routers.lingua-mentis.entrypoints=websecure"
-                - "traefik.http.routers.lingua-mentis.tls.certresolver=letsencrypt"
-                - "traefik.http.services.lingua-mentis.loadbalancer.server.port=8000"
-          networks:
-            traefik-public:
-              external: true
-          COMPOSE
-
-          docker pull ghcr.io/nadavrajuan/lingua-mentis-poc:latest
-          docker compose up -d --force-recreate
-          docker image prune -f
-          echo "Deploy complete"
-          ENDSSH
-
-      - name: Inject APP_PASSWORD into .env on server
+      - name: Inject APP_PASSWORD
         env:
           APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
@@ -92,5 +61,21 @@ jobs:
         run: |
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
             "$SERVER_USER@$SERVER_HOST" \
-            "echo 'APP_PASSWORD=$APP_PASSWORD' > ~/lingua-mentis/.env && \
-             cd ~/lingua-mentis && docker compose up -d --force-recreate"
+            "echo 'APP_PASSWORD=${APP_PASSWORD}' > ~/lingua-mentis/.env"
+
+      - name: Pull image and deploy
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+        run: |
+          # Pipe GITHUB_TOKEN via stdin so docker login --password-stdin reads it on the server
+          echo "$GITHUB_TOKEN" | ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+            "$SERVER_USER@$SERVER_HOST" \
+            'docker login ghcr.io -u nadavrajuan --password-stdin &&
+             cd ~/lingua-mentis &&
+             docker pull ghcr.io/nadavrajuan/lingua-mentis-poc:latest &&
+             docker compose up -d --force-recreate &&
+             docker image prune -f &&
+             docker logout ghcr.io &&
+             echo "Deploy complete"'
