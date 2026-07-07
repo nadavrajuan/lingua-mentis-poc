@@ -73,9 +73,9 @@ jobs:
           echo "$GITHUB_TOKEN" | ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
             "$SERVER_USER@$SERVER_HOST" \
             'docker login ghcr.io -u nadavrajuan --password-stdin &&
+             docker system prune -af --volumes=false &&
              cd ~/lingua-mentis &&
              docker pull ghcr.io/nadavrajuan/lingua-mentis-poc:latest &&
              docker compose up -d --force-recreate &&
-             docker image prune -f &&
              docker logout ghcr.io &&
              echo "Deploy complete"'
