@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lingua Mentis · MNIST Dynamic Belief</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧠</text></svg>">
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+<div class="app">
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="logo">
+      <h1>Lingua Mentis</h1>
+      <div class="sub">dynamic belief · MNIST</div>
+    </div>
+
+    <nav class="nav">
+      <button class="nav-btn active" onclick="showScreen('playback')" id="nav-playback">
+        <span class="icon">▶</span> Playback
+      </button>
+      <button class="nav-btn" onclick="showScreen('human')" id="nav-human">
+        <span class="icon">✎</span> Human Training
+      </button>
+      <button class="nav-btn" onclick="showScreen('calibration')" id="nav-calibration">
+        <span class="icon">⊙</span> Calibration
+      </button>
+    </nav>
+
+    <!-- Playback controls -->
+    <div class="controls" id="pb-controls">
+      <div class="ctrl-group">
+        <div class="ctrl-label">Playback</div>
+        <label class="ctrl-row">
+          <span>Interval (ms)</span>
+          <input type="range" id="ctrl-interval" min="200" max="3000" step="100" value="700"
+                 oninput="updateVal('ctrl-interval','val-interval',v=>v+'ms');sendParamsUpdate()">
+          <span class="val-badge" id="val-interval">700ms</span>
+        </label>
+      </div>
+
+      <div class="ctrl-group">
+        <div class="ctrl-label">Dynamic Weights</div>
+        <label class="ctrl-row">
+          <span>Intensity</span>
+          <input type="range" id="ctrl-intensity" min="0.001" max="0.2" step="0.001" value="0.01"
+                 oninput="updateVal('ctrl-intensity','val-intensity',v=>parseFloat(v).toFixed(3));sendParamsUpdate()">
+          <span class="val-badge" id="val-intensity">0.010</span>
+        </label>
+        <label class="ctrl-row">
+          <span>Max Δ norm</span>
+          <input type="range" id="ctrl-maxnorm" min="0.5" max="10" step="0.5" value="3"
+                 oninput="updateVal('ctrl-maxnorm','val-maxnorm',v=>parseFloat(v).toFixed(1));sendParamsUpdate()">
+          <span class="val-badge" id="val-maxnorm">3.0</span>
+        </label>
+        <div>
+          <div class="ctrl-label" style="margin-bottom:4px">Confidence curve</div>
+          <select id="ctrl-confmode" onchange="sendParamsUpdate()">
+            <option value="inverse_confidence">Inverse confidence</option>
+            <option value="margin_based">Margin based</option>
+            <option value="binned">Binned</option>
+            <option value="fixed">Fixed</option>
+          </select>
+        </div>
+        <div>
+          <div class="ctrl-label" style="margin-bottom:4px">Dynamic layer</div>
+          <select id="ctrl-layermode" onchange="sendParamsUpdate()">
+            <option value="fc2_only">fc2 only (MVP)</option>
+            <option value="fc1_fc2">fc1 + fc2</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="ctrl-group">
+        <div class="ctrl-label">Return to Normal</div>
+        <div class="toggle-row">
+          <span>Enabled</span>
+          <label class="toggle">
+            <input type="checkbox" id="ctrl-decay" onchange="sendParamsUpdate()">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <label class="ctrl-row">
+          <span>Return rate</span>
+          <input type="range" id="ctrl-rate" min="0" max="2" step="0.05" value="0.2"
+                 oninput="updateVal('ctrl-rate','val-rate',v=>parseFloat(v).toFixed(2));sendParamsUpdate()">
+          <span class="val-badge" id="val-rate">0.20</span>
+        </label>
+      </div>
+
+      <div class="ctrl-group">
+        <div class="ctrl-label">Image Noise</div>
+        <label class="ctrl-row">
+          <span>Noise σ</span>
+          <input type="range" id="ctrl-noise" min="0" max="1.5" step="0.05" value="0"
+                 oninput="updateVal('ctrl-noise','val-noise',v=>parseFloat(v).toFixed(2));sendParamsUpdate()">
+          <span class="val-badge" id="val-noise">0.00</span>
+        </label>
+      </div>
+
+      <div class="ctrl-group">
+        <div class="ctrl-label">Sequence</div>
+        <select id="ctrl-seqmode" onchange="onSeqModeChange()">
+          <option value="random">Random test set</option>
+          <option value="only_a">Only digit A</option>
+          <option value="only_b">Only digit B</option>
+          <option value="3_vs_8_ambiguous">3 vs 8 ambiguous</option>
+          <option value="low_confidence">Low confidence</option>
+          <option value="top2_confusion">Top-2 confusion</option>
+          <option value="custom_pair">Custom pair</option>
+        </select>
+        <div id="pair-inputs" style="display:none;gap:6px;margin-top:4px">
+          <label class="ctrl-row">
+            <span>Class A</span>
+            <input type="number" id="ctrl-classa" min="0" max="9" value="3"
+                   style="width:48px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-family:var(--mono)"
+                   onchange="sendParamsUpdate()">
+          </label>
+          <label class="ctrl-row">
+            <span>Class B</span>
+            <input type="number" id="ctrl-classb" min="0" max="9" value="8"
+                   style="width:48px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-family:var(--mono)"
+                   onchange="sendParamsUpdate()">
+          </label>
+        </div>
+      </div>
+
+      <div class="ctrl-group">
+        <div class="ctrl-label">Display</div>
+        <div class="toggle-row">
+          <span>Show true label</span>
+          <label class="toggle">
+            <input type="checkbox" id="ctrl-truelabel" checked onchange="sendParamsUpdate()">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="toggle-row">
+          <span>Show prob chart</span>
+          <label class="toggle">
+            <input type="checkbox" id="ctrl-probchart" checked onchange="toggleProbChart()">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main area -->
+  <div class="main">
+    <!-- Status bar -->
+    <div class="statusbar">
+      <div class="status-dot" id="ws-dot"></div>
+      <span id="ws-status">Disconnected</span>
+      <span style="margin-left:auto">
+        Session: <span id="session-id-label" style="color:var(--text2)">—</span>
+      </span>
+      <span>Step: <span id="step-counter" style="color:var(--accent2);font-weight:600">0</span></span>
+    </div>
+
+    <!-- Playback screen -->
+    <div id="screen-playback" class="screen active content">
+      <div class="btn-row">
+        <button class="btn btn-primary" id="btn-play" onclick="togglePlay()">▶ Play</button>
+        <button class="btn" onclick="stepOnce()">⟶ Step</button>
+        <button class="btn" onclick="resetDelta()">↺ Reset Δ</button>
+        <button class="btn btn-danger btn-sm" onclick="resetSession()">⊗ New Session</button>
+      </div>
+
+      <!-- Prediction area -->
+      <div class="prediction-area" id="prediction-area">
+        <div class="digit-card" id="digit-card">
+          <img id="digit-img" class="digit-img" src="" alt="MNIST digit" style="display:none" />
+          <div id="digit-placeholder" class="placeholder-text" style="width:140px;height:140px;display:flex;align-items:center;justify-content:center;background:var(--surface2);border-radius:6px;font-size:11px">
+            Press Play
+          </div>
+          <div class="prediction-label">
+            <div class="pred-digit" id="pred-digit">—</div>
+            <div class="pred-sub">predicted</div>
+          </div>
+          <div id="true-label-badge" class="true-label-badge" style="display:none"></div>
+        </div>
+
+        <div class="metrics-panel">
+          <div class="metric-row">
+            <div class="metric">
+              <div class="metric-val" id="m-confidence">—</div>
+              <div class="metric-label">Confidence</div>
+            </div>
+            <div class="metric">
+              <div class="metric-val" id="m-margin">—</div>
+              <div class="metric-label">Margin</div>
+            </div>
+            <div class="metric">
+              <div class="metric-val" id="m-deltanorm" style="color:var(--yellow)">0.00</div>
+              <div class="metric-label">Δ Norm</div>
+            </div>
+          </div>
+
+          <!-- Prob chart -->
+          <div class="prob-chart" id="prob-chart">
+            <div class="prob-chart-header">
+              <div class="prob-chart-title">Class Probabilities</div>
+              <div class="prob-chart-legend">
+                <span class="legend-dot" style="background:var(--surface3);border:1px solid var(--text3)"></span>vanilla
+                <span class="legend-dot" style="background:rgba(52,211,153,0.75)"></span>boosted
+                <span class="legend-dot" style="background:rgba(248,113,113,0.5)"></span>suppressed
+                <span class="legend-dot" style="background:var(--accent2)"></span>predicted
+              </div>
+            </div>
+            <div class="prob-bars-v" id="prob-bars"></div>
+            <div class="prob-axis"><span>0%</span><span>50%</span><span>100%</span></div>
+          </div>
+
+          <!-- Drift chart -->
+          <div class="drift-panel">
+            <div class="drift-header">
+              <div class="drift-title">Dynamic Memory Drift</div>
+              <div class="drift-norm" id="drift-norm-display">0.000</div>
+            </div>
+            <canvas id="drift-canvas" width="600" height="60"></canvas>
+          </div>
+
+          <!-- Bias panel -->
+          <div class="bias-panel" id="bias-panel">
+            <div class="section-header">
+              <div class="section-title">Perceptual Bias</div>
+              <span class="tag active" id="bias-tag">neutral</span>
+            </div>
+            <div id="bias-content" class="placeholder-text">No bias data yet</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- History strip -->
+      <div class="section-header">
+        <div class="section-title">Sequence History</div>
+        <span style="font-size:11px;color:var(--text3)" id="history-count"></span>
+      </div>
+      <div class="history-strip" id="history-strip"></div>
+    </div>
+
+    <!-- Human Training screen -->
+    <div id="screen-human" class="screen content">
+      <div class="tab-bar">
+        <button class="tab active" onclick="humanTab('setup')" id="htab-setup">Setup</button>
+        <button class="tab" onclick="humanTab('trial')" id="htab-trial">Trial</button>
+        <button class="tab" onclick="humanTab('summary')" id="htab-summary">Summary</button>
+      </div>
+
+      <!-- Setup -->
+      <div id="human-setup" style="margin-top:16px">
+        <div style="max-width:400px;display:flex;flex-direction:column;gap:14px">
+          <div class="ctrl-group">
+            <div class="ctrl-label">Mode</div>
+            <select id="h-mode">
+              <option value="3_vs_8">3 vs 8</option>
+              <option value="random">Any digit</option>
+              <option value="custom_pair">Custom pair</option>
+            </select>
+          </div>
+          <div class="ctrl-group" id="h-pair-inputs" style="display:none">
+            <label class="ctrl-row">
+              <span>Class A</span>
+              <input type="number" id="h-classa" value="3" min="0" max="9"
+                     style="width:48px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-family:var(--mono)">
+            </label>
+            <label class="ctrl-row">
+              <span>Class B</span>
+              <input type="number" id="h-classb" value="8" min="0" max="9"
+                     style="width:48px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-family:var(--mono)">
+            </label>
+          </div>
+          <button class="btn btn-primary" onclick="startHumanSession()">Start Session</button>
+        </div>
+      </div>
+
+      <!-- Trial -->
+      <div id="human-trial" style="display:none">
+        <div class="human-area">
+          <div style="width:100%;display:flex;align-items:center;gap:10px">
+            <div class="progress-bar-wrap" style="flex:1">
+              <div class="progress-bar-fill" id="h-progress" style="width:0%"></div>
+            </div>
+            <span style="font-family:var(--mono);font-size:11px;color:var(--text3)" id="h-progress-label">0 / 0</span>
+          </div>
+
+          <div class="human-digit-display">
+            <img id="h-digit-img" class="human-digit-img" src="" alt="digit" />
+            <div style="font-size:12px;color:var(--text3);font-family:var(--mono)" id="h-rt-display">Press a key 0–9</div>
+          </div>
+
+          <div class="key-hint" id="key-caps">
+            <div class="key-cap" data-key="0" onclick="humanKeyPress(0)">0</div>
+            <div class="key-cap" data-key="1" onclick="humanKeyPress(1)">1</div>
+            <div class="key-cap" data-key="2" onclick="humanKeyPress(2)">2</div>
+            <div class="key-cap" data-key="3" onclick="humanKeyPress(3)">3</div>
+            <div class="key-cap" data-key="4" onclick="humanKeyPress(4)">4</div>
+            <div class="key-cap" data-key="5" onclick="humanKeyPress(5)">5</div>
+            <div class="key-cap" data-key="6" onclick="humanKeyPress(6)">6</div>
+            <div class="key-cap" data-key="7" onclick="humanKeyPress(7)">7</div>
+            <div class="key-cap" data-key="8" onclick="humanKeyPress(8)">8</div>
+            <div class="key-cap" data-key="9" onclick="humanKeyPress(9)">9</div>
+          </div>
+
+          <div class="btn-row">
+            <button class="btn btn-sm" onclick="humanSkip()">Skip</button>
+            <button class="btn btn-danger btn-sm" onclick="endHumanSession()">End Session</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Summary -->
+      <div id="human-summary" style="display:none;margin-top:16px">
+        <div id="summary-content" class="placeholder-text">Complete a session to see results.</div>
+      </div>
+    </div>
+
+    <!-- Calibration screen -->
+    <div id="screen-calibration" class="screen content">
+      <div style="max-width:480px;display:flex;flex-direction:column;gap:16px">
+        <p style="color:var(--text2);font-size:12px">
+          Enter a human training session ID to run calibration. The system will find dynamic
+          parameters that best match the human's sequence of answers.
+        </p>
+        <div class="ctrl-group">
+          <div class="ctrl-label">Human Session ID</div>
+          <input class="session-input" id="calib-session-id" placeholder="uuid..." />
+        </div>
+        <button class="btn btn-primary" onclick="runCalibration()" id="calib-btn">Run Calibration</button>
+        <div id="calib-result" style="display:none">
+          <div class="section-title" style="margin-bottom:10px">Best Parameters Found</div>
+          <div id="calib-params-list"></div>
+          <div style="margin-top:12px">
+            <button class="btn" onclick="applyCalibParams()">Apply to Playback Session</button>
+          </div>
+        </div>
+        <div id="calib-error" style="display:none;color:var(--red);font-size:12px"></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

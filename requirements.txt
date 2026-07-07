@@ -1,0 +1,11 @@
+torch
+torchvision
+fastapi
+uvicorn[standard]
+pydantic
+numpy
+pillow
+sqlalchemy
+aiosqlite
+python-multipart
+scipy

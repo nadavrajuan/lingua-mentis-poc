@@ -1,0 +1,80 @@
+name: Build & Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  IMAGE: ghcr.io/nadavrajuan/lingua-mentis-poc
+  DEPLOY_DIR: ~/lingua-mentis
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:${{ github.sha }}
+
+      - name: Deploy to server
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            set -e
+            mkdir -p ${{ env.DEPLOY_DIR }}/data ${{ env.DEPLOY_DIR }}/models
+            cd ${{ env.DEPLOY_DIR }}
+
+            # Write prod compose if it changed
+            cat > docker-compose.yml << 'COMPOSE'
+            services:
+              lingua-mentis:
+                image: ghcr.io/nadavrajuan/lingua-mentis-poc:latest
+                restart: unless-stopped
+                environment:
+                  - PYTHONUNBUFFERED=1
+                  - APP_PASSWORD=${APP_PASSWORD}
+                volumes:
+                  - ./data:/app/data
+                  - ./models:/app/models
+                networks:
+                  - traefik-public
+                labels:
+                  - "traefik.enable=true"
+                  - "traefik.http.routers.lingua-mentis.rule=Host(`lingua-mentis.rajuan.app`)"
+                  - "traefik.http.routers.lingua-mentis.entrypoints=websecure"
+                  - "traefik.http.routers.lingua-mentis.tls.certresolver=letsencrypt"
+                  - "traefik.http.services.lingua-mentis.loadbalancer.server.port=8000"
+            networks:
+              traefik-public:
+                external: true
+            COMPOSE
+
+            echo "APP_PASSWORD=${APP_PASSWORD}" > .env
+
+            docker pull ghcr.io/nadavrajuan/lingua-mentis-poc:latest
+            docker compose --env-file .env up -d --force-recreate
+            docker image prune -f
+        env:
+          APP_PASSWORD: ${{ secrets.APP_PASSWORD }}

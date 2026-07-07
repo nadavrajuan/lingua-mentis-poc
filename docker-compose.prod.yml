@@ -1,0 +1,22 @@
+services:
+  lingua-mentis:
+    image: ghcr.io/nadavrajuan/lingua-mentis-poc:latest
+    restart: unless-stopped
+    environment:
+      - PYTHONUNBUFFERED=1
+      - APP_PASSWORD=${APP_PASSWORD}
+    volumes:
+      - ./data:/app/data
+      - ./models:/app/models
+    networks:
+      - traefik-public
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.lingua-mentis.rule=Host(`lingua-mentis.rajuan.app`)"
+      - "traefik.http.routers.lingua-mentis.entrypoints=websecure"
+      - "traefik.http.routers.lingua-mentis.tls.certresolver=letsencrypt"
+      - "traefik.http.services.lingua-mentis.loadbalancer.server.port=8000"
+
+networks:
+  traefik-public:
+    external: true
