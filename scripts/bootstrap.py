@@ -20,7 +20,17 @@ def base_model_exists() -> bool:
 
 
 def ambiguity_bank_exists() -> bool:
-    return os.path.exists("/app/data/ambiguity_bank.sqlite")
+    path = "/app/data/ambiguity_bank.sqlite"
+    if not os.path.exists(path):
+        return False
+    try:
+        import sqlite3
+        conn = sqlite3.connect(path)
+        count = conn.execute("SELECT COUNT(*) FROM ambiguity").fetchone()[0]
+        conn.close()
+        return count > 0
+    except Exception:
+        return False
 
 
 def download_mnist():
@@ -66,6 +76,10 @@ def main():
         print("Base model found.")
 
     if not ambiguity_bank_exists():
+        # Remove corrupt/partial file before rebuilding
+        corrupt = "/app/data/ambiguity_bank.sqlite"
+        if os.path.exists(corrupt):
+            os.remove(corrupt)
         build_ambiguity_bank()
     else:
         print("Ambiguity bank found.")
